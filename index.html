@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1a73e8" />
+  <meta name="description" content="CareAssist – Smart Medication & Clinical Monitoring Reminder for caregivers" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="CareAssist" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <title>CareAssist – Smart Care Reminder</title>
+</head>
+<body>
+
+<!-- ===== HIGH RISK ALERT ===== -->
+<div id="high-risk-overlay" class="overlay overlay-center hidden">
+  <div class="overlay-content alert-critical">
+    <div class="alert-icon">🚨</div>
+    <h2>HIGH RISK ALERT</h2>
+    <p id="high-risk-message">Critical medication missed twice. Immediate attention required.</p>
+    <button class="btn btn-caregiver btn-block" id="btn-notify-caregiver-alert">📱 Notify Caregiver Now</button>
+    <button class="btn btn-secondary btn-block" onclick="closeOverlay('high-risk-overlay')">Dismiss</button>
+  </div>
+</div>
+
+<!-- ===== ONBOARDING ===== -->
+<div id="onboarding-overlay" class="overlay hidden">
+  <div class="overlay-content onboarding">
+    <div class="onboarding-logo">💊</div>
+    <h1>CareAssist</h1>
+    <p class="onboarding-sub">Smart Medication &amp; Clinical Monitoring</p>
+    <form id="onboarding-form">
+      <div class="form-group">
+        <label>Patient Name</label>
+        <input type="text" id="patient-name" placeholder="e.g. Rajesh Kumar" required />
+      </div>
+      <div class="form-group">
+        <label>Caregiver Name</label>
+        <input type="text" id="caregiver-name" placeholder="e.g. Priya Kumar" required />
+      </div>
+      <div class="form-group">
+        <label>Caregiver Phone (with country code)</label>
+        <input type="tel" id="caregiver-phone" placeholder="e.g. +919876543210" required />
+      </div>
+      <div class="form-group">
+        <label>Daily Water Target (ml)</label>
+        <input type="number" id="water-target" value="2000" min="500" max="5000" />
+      </div>
+      <div class="form-group">
+        <label>BP Alert Threshold – Systolic (mmHg)</label>
+        <input type="number" id="bp-systolic-threshold" value="160" min="100" max="250" />
+      </div>
+      <div class="form-group">
+        <label>SpO₂ Alert Threshold (%)</label>
+        <input type="number" id="spo2-threshold" value="94" min="80" max="100" />
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Get Started →</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Add / Edit Medication ===== -->
+<div id="modal-medication" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3 id="modal-med-title">💊 Add Medication</h3>
+    <form id="medication-form">
+      <input type="hidden" id="med-edit-id" value="" />
+
+      <div class="form-group">
+        <label>Medication Name *</label>
+        <input type="text" id="med-name" placeholder="e.g. Amlodipine" required />
+      </div>
+      <div class="form-group">
+        <label>Dose *</label>
+        <input type="text" id="med-dose" placeholder="e.g. 5mg" required />
+      </div>
+      <div class="form-group">
+        <label>Frequency</label>
+        <select id="med-frequency">
+          <option value="once">Once Daily</option>
+          <option value="twice">Twice Daily</option>
+          <option value="thrice">Three Times Daily</option>
+          <option value="custom">Custom Times</option>
+        </select>
+      </div>
+
+      <!-- Dynamic reminder times -->
+      <div class="form-group">
+        <label>Reminder Time(s) *
+          <span class="label-hint">Each medication can have separate times</span>
+        </label>
+        <div id="med-times-container"></div>
+        <button type="button" class="btn-add-time" id="btn-add-time" onclick="addTimeSlot()">+ Add Another Time</button>
+      </div>
+
+      <div class="form-group">
+        <label>Start Date</label>
+        <input type="date" id="med-start" />
+      </div>
+      <div class="form-group">
+        <label>End Date <span class="label-hint">(leave blank = ongoing)</span></label>
+        <input type="date" id="med-end" />
+      </div>
+      <div class="form-group toggle-group">
+        <label>Critical Medication?</label>
+        <label class="toggle">
+          <input type="checkbox" id="med-critical" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label>Instructions / Notes</label>
+        <input type="text" id="med-notes" placeholder="e.g. Take with food" />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeMedModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btn-med-save">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Log BP ===== -->
+<div id="modal-bp" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3>❤️ Log Blood Pressure</h3>
+    <form id="bp-form">
+      <div class="form-group">
+        <label>Systolic (mmHg) *</label>
+        <input type="number" id="bp-systolic" placeholder="e.g. 120" min="50" max="300" required />
+      </div>
+      <div class="form-group">
+        <label>Diastolic (mmHg) *</label>
+        <input type="number" id="bp-diastolic" placeholder="e.g. 80" min="30" max="200" required />
+      </div>
+      <div class="form-group">
+        <label>Pulse (bpm)</label>
+        <input type="number" id="bp-pulse" placeholder="e.g. 72" min="30" max="250" />
+      </div>
+      <div class="form-group">
+        <label>Time of Reading</label>
+        <input type="time" id="bp-time" />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeOverlay('modal-bp')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Log BP</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Log SpO2 ===== -->
+<div id="modal-spo2" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3>🫁 Log Oxygen Saturation</h3>
+    <form id="spo2-form">
+      <div class="form-group">
+        <label>SpO₂ (%) *</label>
+        <input type="number" id="spo2-value" placeholder="e.g. 98" min="50" max="100" required />
+      </div>
+      <div class="form-group">
+        <label>Time of Reading</label>
+        <input type="time" id="spo2-time" />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeOverlay('modal-spo2')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Log SpO₂</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Log Water ===== -->
+<div id="modal-water" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3>💧 Log Water Intake</h3>
+    <form id="water-form">
+      <div class="form-group">
+        <label>Quick Select</label>
+        <div class="quick-amounts">
+          <button type="button" class="btn-amount" onclick="setWaterAmount(100)">100ml</button>
+          <button type="button" class="btn-amount" onclick="setWaterAmount(200)">200ml</button>
+          <button type="button" class="btn-amount" onclick="setWaterAmount(300)">300ml</button>
+          <button type="button" class="btn-amount" onclick="setWaterAmount(500)">500ml</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Amount (ml) *</label>
+        <input type="number" id="water-amount" placeholder="Or enter custom amount" min="10" max="2000" required />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeOverlay('modal-water')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Log Water</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Log Weight ===== -->
+<div id="modal-weight" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3>⚖️ Log Weight</h3>
+    <form id="weight-form">
+      <div class="form-group">
+        <label>Weight (kg) *</label>
+        <input type="number" id="weight-value" placeholder="e.g. 70.5" min="10" max="300" step="0.1" required />
+      </div>
+      <div class="form-group">
+        <label>Time</label>
+        <input type="time" id="weight-time" />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeOverlay('modal-weight')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Log Weight</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Log Urine ===== -->
+<div id="modal-urine" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3>🚽 Log Urine Output</h3>
+    <form id="urine-form">
+      <div class="form-group">
+        <label>Volume (ml) *</label>
+        <input type="number" id="urine-value" placeholder="e.g. 250" min="10" max="2000" required />
+      </div>
+      <div class="form-group">
+        <label>Time</label>
+        <input type="time" id="urine-time" />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeOverlay('modal-urine')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Log Output</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Log Blood Sugar ===== -->
+<div id="modal-sugar" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3>🩸 Log Blood Sugar</h3>
+    <form id="sugar-form">
+      <div class="form-group">
+        <label>Reading Type</label>
+        <select id="sugar-type">
+          <option value="fasting">Fasting</option>
+          <option value="postprandial">Postprandial (2hr after meal)</option>
+          <option value="random">Random</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Glucose (mg/dL) *</label>
+        <input type="number" id="sugar-value" placeholder="e.g. 110" min="30" max="600" required />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeOverlay('modal-sugar')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Log Sugar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Log Temperature ===== -->
+<div id="modal-temp" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3>🌡️ Log Temperature</h3>
+    <form id="temp-form">
+      <div class="form-group">
+        <label>Temperature (°F) *</label>
+        <input type="number" id="temp-value" placeholder="e.g. 98.6" min="90" max="115" step="0.1" required />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeOverlay('modal-temp')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Log Temp</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: Add Intervention ===== -->
+<div id="modal-intervention" class="overlay hidden">
+  <div class="overlay-content modal-form">
+    <h3>📋 Add Clinical Intervention</h3>
+    <form id="intervention-form">
+      <div class="form-group">
+        <label>Intervention Type</label>
+        <select id="int-type">
+          <option value="physio">Physiotherapy / Exercise</option>
+          <option value="injection">Injection</option>
+          <option value="dressing">Dressing Change</option>
+          <option value="bp_check">BP Check</option>
+          <option value="spo2_check">SpO₂ Check</option>
+          <option value="weight_check">Weight Check</option>
+          <option value="appointment">Follow-up Appointment</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="form-group" id="int-custom-group" style="display:none;">
+        <label>Custom Name</label>
+        <input type="text" id="int-custom-name" placeholder="e.g. Nebulization" />
+      </div>
+      <div class="form-group">
+        <label>Scheduled Date *</label>
+        <input type="date" id="int-date" required />
+      </div>
+      <div class="form-group">
+        <label>Scheduled Time *</label>
+        <input type="time" id="int-time" required />
+      </div>
+      <div class="form-group toggle-group">
+        <label>Critical?</label>
+        <label class="toggle">
+          <input type="checkbox" id="int-critical" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <input type="text" id="int-notes" placeholder="Additional instructions..." />
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" onclick="closeOverlay('modal-intervention')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== APP SHELL ===== -->
+<div id="app">
+
+  <header class="app-header">
+    <div class="header-left">
+      <span class="app-logo">💊</span>
+      <div class="header-text">
+        <div class="app-name">CareAssist</div>
+        <div class="patient-name" id="header-patient-name">Loading…</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge" id="status-badge">● Stable</div>
+      <button class="btn-icon" onclick="showSettings()" aria-label="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <div id="install-banner" class="info-banner hidden">
+    <span>📲 Install CareAssist on your device</span>
+    <div class="banner-actions">
+      <button class="btn btn-small btn-primary" id="btn-install">Install</button>
+      <button class="btn-close" onclick="this.closest('.info-banner').classList.add('hidden')">✕</button>
+    </div>
+  </div>
+
+  <div id="notif-banner" class="info-banner info-banner--yellow hidden">
+    <span>🔔 Enable notifications for reminders</span>
+    <div class="banner-actions">
+      <button class="btn btn-small btn-primary" onclick="requestNotificationPermission()">Enable</button>
+      <button class="btn-close" onclick="this.closest('.info-banner').classList.add('hidden')">✕</button>
+    </div>
+  </div>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="dashboard">🏠<span class="tab-label">Home</span></button>
+    <button class="tab-btn" data-tab="medications">💊<span class="tab-label">Meds</span></button>
+    <button class="tab-btn" data-tab="vitals">📊<span class="tab-label">Vitals</span></button>
+    <button class="tab-btn" data-tab="history">📋<span class="tab-label">History</span></button>
+    <button class="tab-btn" data-tab="settings">⚙️<span class="tab-label">Settings</span></button>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <section class="tab-content active" id="tab-dashboard">
+    <div class="care-summary-card">
+      <div class="summary-status">
+        <span class="status-icon" id="summary-icon">✅</span>
+        <div>
+          <div class="summary-label">Today's Care Status</div>
+          <div class="summary-value" id="summary-status-text">Stable</div>
+        </div>
+      </div>
+      <div class="summary-stats">
+        <div class="stat"><div class="stat-value" id="stat-adherence">--</div><div class="stat-label">Adherence</div></div>
+        <div class="stat"><div class="stat-value" id="stat-taken">0</div><div class="stat-label">Taken</div></div>
+        <div class="stat"><div class="stat-value" id="stat-missed">0</div><div class="stat-label">Missed</div></div>
+        <div class="stat"><div class="stat-value" id="stat-pending">0</div><div class="stat-label">Pending</div></div>
+      </div>
+    </div>
+
+    <div class="section-header">Quick Log</div>
+    <div class="quick-log-grid">
+      <button class="quick-btn" onclick="openOverlay('modal-bp')"><span class="quick-icon">❤️</span><span class="quick-label">BP</span></button>
+      <button class="quick-btn" onclick="openOverlay('modal-spo2')"><span class="quick-icon">🫁</span><span class="quick-label">SpO₂</span></button>
+      <button class="quick-btn" onclick="openOverlay('modal-water')"><span class="quick-icon">💧</span><span class="quick-label">Water</span></button>
+      <button class="quick-btn" onclick="openOverlay('modal-weight')"><span class="quick-icon">⚖️</span><span class="quick-label">Weight</span></button>
+      <button class="quick-btn" onclick="openOverlay('modal-urine')"><span class="quick-icon">🚽</span><span class="quick-label">Urine</span></button>
+      <button class="quick-btn" onclick="openOverlay('modal-sugar')"><span class="quick-icon">🩸</span><span class="quick-label">Sugar</span></button>
+      <button class="quick-btn" onclick="openOverlay('modal-temp')"><span class="quick-icon">🌡️</span><span class="quick-label">Temp</span></button>
+      <button class="quick-btn" onclick="openOverlay('modal-intervention')"><span class="quick-icon">📋</span><span class="quick-label">Care</span></button>
+    </div>
+
+    <div class="section-header">Hydration Today</div>
+    <div class="water-card">
+      <div class="water-progress-bar"><div class="water-fill" id="water-fill" style="width:0%"></div></div>
+      <div class="water-stats">
+        <span id="water-consumed">0 ml</span>
+        <span>of <span id="water-target-display">2000</span> ml</span>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span>Today's Medications</span>
+      <button class="btn-add-small" onclick="openAddMedModal()">+ Add</button>
+    </div>
+    <div id="today-medications-list" class="card-list">
+      <div class="empty-state">No medications scheduled.<br>Tap <b>+ Add</b> to add one.</div>
+    </div>
+
+    <div class="section-header">Upcoming (Next 6 Hours)</div>
+    <div id="upcoming-reminders-list" class="card-list">
+      <div class="empty-state">No upcoming reminders.</div>
+    </div>
+
+    <div class="section-header section-header--alert">Missed Alerts</div>
+    <div id="missed-alerts-list" class="card-list">
+      <div class="empty-state">No missed alerts. 🎉</div>
+    </div>
+
+    <div class="section-header">
+      <span>Today's Interventions</span>
+      <button class="btn-add-small" onclick="openOverlay('modal-intervention')">+ Add</button>
+    </div>
+    <div id="today-interventions-list" class="card-list">
+      <div class="empty-state">No interventions today.</div>
+    </div>
+  </section>
+
+  <!-- MEDICATIONS TAB -->
+  <section class="tab-content hidden" id="tab-medications">
+    <div class="tab-toolbar">
+      <div class="section-title">All Medications</div>
+      <button class="btn btn-primary btn-medium" onclick="openAddMedModal()">+ Add</button>
+    </div>
+    <div class="adherence-widget">
+      <div class="adh-item"><div class="adh-val" id="adh-today">--</div><div class="adh-lbl">Today</div></div>
+      <div class="adh-item"><div class="adh-val" id="adh-week">--</div><div class="adh-lbl">This Week</div></div>
+      <div class="adh-item"><div class="adh-val" id="adh-streak">0</div><div class="adh-lbl">Streak</div></div>
+    </div>
+    <div id="medications-list" class="card-list">
+      <div class="empty-state">No medications added yet.<br>Tap <b>+ Add</b> above.</div>
+    </div>
+  </section>
+
+  <!-- VITALS TAB -->
+  <section class="tab-content hidden" id="tab-vitals">
+    <div class="tab-toolbar">
+      <div class="section-title">Vitals &amp; Readings</div>
+    </div>
+    <div class="vitals-grid">
+      <div class="vital-card" id="vc-bp" onclick="openOverlay('modal-bp')">
+        <div class="vital-icon">❤️</div><div class="vital-label">Blood Pressure</div>
+        <div class="vital-value" id="latest-bp">--/--</div><div class="vital-time" id="latest-bp-time">No data</div>
+      </div>
+      <div class="vital-card" id="vc-spo2" onclick="openOverlay('modal-spo2')">
+        <div class="vital-icon">🫁</div><div class="vital-label">SpO₂</div>
+        <div class="vital-value" id="latest-spo2">--%</div><div class="vital-time" id="latest-spo2-time">No data</div>
+      </div>
+      <div class="vital-card" id="vc-weight" onclick="openOverlay('modal-weight')">
+        <div class="vital-icon">⚖️</div><div class="vital-label">Weight</div>
+        <div class="vital-value" id="latest-weight">-- kg</div><div class="vital-time" id="latest-weight-time">No data</div>
+      </div>
+      <div class="vital-card" id="vc-sugar" onclick="openOverlay('modal-sugar')">
+        <div class="vital-icon">🩸</div><div class="vital-label">Blood Sugar</div>
+        <div class="vital-value" id="latest-sugar">-- mg/dL</div><div class="vital-time" id="latest-sugar-time">No data</div>
+      </div>
+      <div class="vital-card" id="vc-temp" onclick="openOverlay('modal-temp')">
+        <div class="vital-icon">🌡️</div><div class="vital-label">Temperature</div>
+        <div class="vital-value" id="latest-temp">-- °F</div><div class="vital-time" id="latest-temp-time">No data</div>
+      </div>
+      <div class="vital-card" id="vc-urine" onclick="openOverlay('modal-urine')">
+        <div class="vital-icon">🚽</div><div class="vital-label">Urine (Today)</div>
+        <div class="vital-value" id="today-urine">0 ml</div><div class="vital-time" id="today-urine-min">Min: 800 ml</div>
+      </div>
+    </div>
+    <div class="tab-toolbar" style="margin-top:1.5rem">
+      <div class="section-title">Interventions</div>
+      <button class="btn btn-primary btn-medium" onclick="openOverlay('modal-intervention')">+ Add</button>
+    </div>
+    <div id="interventions-list" class="card-list">
+      <div class="empty-state">No interventions scheduled.</div>
+    </div>
+  </section>
+
+  <!-- HISTORY TAB -->
+  <section class="tab-content hidden" id="tab-history">
+    <div class="tab-toolbar tab-toolbar--wrap">
+      <div class="section-title">History</div>
+      <select id="history-filter" class="select-filter" onchange="renderHistory()">
+        <option value="all">All Readings</option>
+        <option value="bp">Blood Pressure</option>
+        <option value="spo2">SpO₂</option>
+        <option value="water">Water Intake</option>
+        <option value="weight">Weight</option>
+        <option value="urine">Urine Output</option>
+        <option value="sugar">Blood Sugar</option>
+        <option value="temp">Temperature</option>
+        <option value="medication">Medications</option>
+      </select>
+    </div>
+    <div id="history-list" class="card-list">
+      <div class="empty-state">No history recorded yet.</div>
+    </div>
+  </section>
+
+  <!-- SETTINGS TAB -->
+  <section class="tab-content hidden" id="tab-settings">
+    <div class="settings-card">
+      <div class="settings-section-title">👤 Patient &amp; Caregiver</div>
+      <div class="form-group"><label>Patient Name</label><input type="text" id="set-patient-name" /></div>
+      <div class="form-group"><label>Caregiver Name</label><input type="text" id="set-caregiver-name" /></div>
+      <div class="form-group"><label>Caregiver Phone</label><input type="tel" id="set-caregiver-phone" placeholder="+919876543210" /></div>
+    </div>
+    <div class="settings-card">
+      <div class="settings-section-title">⚠️ Alert Thresholds</div>
+      <div class="form-group"><label>Daily Water Target (ml)</label><input type="number" id="set-water-target" min="500" max="5000" /></div>
+      <div class="form-group"><label>BP Alert – Systolic (mmHg)</label><input type="number" id="set-bp-systolic" min="100" max="250" /></div>
+      <div class="form-group"><label>SpO₂ Alert Threshold (%)</label><input type="number" id="set-spo2-threshold" min="80" max="100" /></div>
+      <div class="form-group"><label>Min Daily Urine Output (ml)</label><input type="number" id="set-urine-min" min="200" max="5000" /></div>
+      <div class="form-group"><label>Temp Alert Threshold (°F)</label><input type="number" id="set-temp-threshold" step="0.1" min="96" max="115" /></div>
+      <div class="form-group"><label>Fasting Blood Sugar Alert (mg/dL)</label><input type="number" id="set-sugar-fasting-high" min="80" max="400" /></div>
+    </div>
+    <div class="settings-card">
+      <div class="settings-section-title">🔔 Notifications</div>
+      <div class="form-group toggle-group"><label>Medication Reminders</label><label class="toggle"><input type="checkbox" id="set-notif-meds" checked /><span class="toggle-slider"></span></label></div>
+      <div class="form-group toggle-group"><label>Water Intake Reminders</label><label class="toggle"><input type="checkbox" id="set-notif-water" checked /><span class="toggle-slider"></span></label></div>
+      <div class="form-group toggle-group"><label>Vital Monitoring Reminders</label><label class="toggle"><input type="checkbox" id="set-notif-vitals" checked /><span class="toggle-slider"></span></label></div>
+      <div class="form-group"><label>Water Reminder Every X Hours</label><input type="number" id="set-water-interval" min="1" max="8" /></div>
+      <button class="btn btn-secondary btn-block" onclick="requestNotificationPermission()">🔔 Test Notification</button>
+    </div>
+    <div class="settings-card">
+      <div class="settings-section-title">📱 Caregiver Alert</div>
+      <button class="btn btn-caregiver btn-block" onclick="notifyCaregiver('Test alert from CareAssist app')">📱 Send Test SMS</button>
+    </div>
+    <div class="settings-card">
+      <div class="settings-section-title">🗄️ Data Management</div>
+      <button class="btn btn-secondary btn-block" onclick="exportData()">📥 Export Data (JSON)</button>
+      <button class="btn btn-danger btn-block" style="margin-top:8px" onclick="clearAllData()">🗑️ Clear All Data</button>
+    </div>
+    <button class="btn btn-primary btn-block" style="margin:0 0 8px" onclick="saveSettings()">💾 Save Settings</button>
+    <div class="app-version">CareAssist v1.1 · All data stored locally · No server required</div>
+  </section>
+
+</div><!-- end #app -->
+
+<div id="toast" class="toast hidden" role="alert"></div>
+<script src="app.js"></script>
+</body>
+</html>
